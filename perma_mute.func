@@ -1,0 +1,242 @@
+function perma_mute_init()
+{
+	zero return
+	echo "Loaded perma mute - mute ip_targets for X hours"
+
+	//list of targets
+	zero :perma_mute_targets
+
+	zero :perma_mute_debug
+
+	//sc_list_add expects a cvarname, so it has to be a global cvar since local's are stashed upon fn call.
+
+	//When client connects
+	sp_sc_func_exec spf_sc_list_add_func _sp_sv_on_client_begin perma_mute_connected
+
+	//register the target name to global list
+	sp_sc_func_exec spf_sc_list_add :perma_mute_targets "norway" ","
+	sp_sc_func_exec spf_sc_list_add :perma_mute_targets "dende" ","
+	sp_sc_func_exec spf_sc_list_add :perma_mute_targets "acadie" ","
+
+	//start off unmuted.
+	set :perma_mute_norway_muted 0
+	set :perma_mute_dende_muted 0
+	set :perma_mute_acadie_muted 0
+
+	//timestamp when unmute applies
+	zero :perma_mute_norway_unmutestamp
+	zero :perma_mute_dende_unmutestamp
+	zero :perma_mute_acadie_unmutestamp
+
+	sp_sc_func_alias perma_debug perma_debug
+	
+}
+
+function perma_debug(*)
+{
+	sp_sc_flow_if number cvar ~0 > val 0
+	{
+		sp_sc_cvar_copy ~out ~1
+		set ~count 2
+		sp_sc_flow_while number cvar ~count <= val #~0
+		{
+			sp_sc_cvar_copy ~val ~$~count
+			sp_sc_cvar_append ~out " " #~val
+			add ~count 1
+		}
+	}
+
+	sp_sc_flow_if text cvar :perma_mute_debug != val ""
+	{
+		sp_sv_print_broadcast #~out
+	}
+}
+
+function unmute_cb(~slot, ~unmute_store, ~target)
+{
+	perma_debug "DEBUG: Unmuted."
+
+	//only apply unmute if the slot is still the target
+	//does this slot match the target cidrs
+	sp_sc_cvar_sset ~tmp target_cidrs_match_slots_ip_$~target
+	sp_sc_func_exec $~tmp #~slot
+	sp_sc_flow_if number cvar return == val 1
+	{
+		sp_sv_say_unmute $~slot
+	}
+	
+	set #~unmute_store "0"
+}
+
+function .perma( ~par_slot,  ~target, ~minutes )
+{
+	perma_debug "DEBUG: .perma"
+
+	sp_sc_flow_if text cvar ~target != val ""
+	{
+		//:perma_mute_norway_muted
+		sp_sc_cvar_sset ~is_muted_cvar :perma_mute_ $~target _ muted
+		//:perma_mute_norway_unmutestamp
+		sp_sc_cvar_sset ~unmutestamp_cvar :perma_mute_ $~target _ unmutestamp
+
+		sp_sc_info_time
+		perma_debug "time of attempt-muting them is " $_sp_sc_info_time_min
+
+		sp_sc_cvar_copy ~unmutestamp #~unmutestamp_cvar
+		//unmute time - now
+		sp_sc_cvar_math_sub ~unmutestamp $_sp_sc_info_time_min
+
+		sp_sc_flow_if number cvar ~minutes > val 0.017
+		{
+			sp_sc_flow_if number cvar #~is_muted_cvar == val 1
+			{
+				perma_debug "Target is already muted and unmutes in " $~unmutestamp " minutes."
+			}
+			else
+			{
+				set ~slot 0
+				//iterate clients in server
+				sp_sc_flow_while number cvar ~slot < cvar maxclients
+				{
+					//does this slot match the target cidrs
+					sp_sc_cvar_sset ~tmp target_cidrs_match_slots_ip_$~target
+					sp_sc_func_exec $~tmp #~slot
+					sp_sc_flow_if number cvar return == val 1
+					{
+						perma_debug "muted target " $~target "on directly"
+						//target is in server now.
+						sp_sv_say_mute #~slot
+						set #~is_muted_cvar "1" 
+
+						sp_sc_info_time
+						perma_debug "time of muting them is " $_sp_sc_info_time_min
+
+						sp_sc_cvar_copy #~unmutestamp_cvar _sp_sc_info_time_min
+						sp_sc_cvar_math_add #~unmutestamp_cvar $~minutes
+
+						sp_sc_cvar_copy ~tmp #~unmutestamp_cvar
+
+						perma_debug "unmute time will be " #~tmp
+
+						sp_sc_cvar_math_mul ~minutes 1000
+						//for minutes instead of seconds
+						sp_sc_cvar_math_mul ~minutes 60
+						sset ~cmd sp_sc_func_exec unmute_cb $~slot #~is_muted_cvar #~target
+						sp_sc_timer $~minutes #~cmd
+
+						set ~slot 99999
+					}
+
+					add ~slot 1
+				}
+			}
+		}
+		else
+		{
+			sp_sc_cvar_copy ~is_muted #~is_muted_cvar
+			sp_sc_flow_if number cvar ~is_muted == val 0
+			{
+				sset ~msg "Mute status for " #~target " is : " #~is_muted
+			}
+			else
+			{
+				sset ~msg "Mute status for " #~target " is : " #~is_muted " and unmutes in : " #~unmutestamp
+			}
+			 
+			sp_sv_print_client #~par_slot #~msg
+		}	
+	}
+	else
+	{
+		perma_debug ".perma TARGET DURATION"
+		sp_sv_print_broadcast ".perma TARGET DURATION"
+		sp_sv_print_broadcast "Valid Targets: norway, acadie, dende"
+	}
+}
+
+//a player connects
+function perma_mute_connected( ~slot )
+{
+	perma_debug "DEBUG: perma_mute_connected"
+
+	sp_sc_cvar_split ~split "," :perma_mute_targets
+	set ~count 1
+	//iterate mute targets
+	sp_sc_flow_while number cvar ~count <= val #~split_0
+	{
+		sp_sc_cvar_copy ~target ~split_$~count
+
+		//:perma_mute_norway_muted
+		sp_sc_cvar_sset ~is_muted_cvar :perma_mute_ $~target _muted
+		sp_sc_flow_if number cvar #~is_muted_cvar == val 1
+		{
+			//re-apply mute
+
+			sp_sc_cvar_sset ~tmp target_cidrs_match_slots_ip_$~target
+			sp_sc_func_exec $~tmp #~slot
+			sp_sc_flow_if number cvar return == val 1
+			{ 
+				perma_debug "muted target " $~target "on connect"
+				//target is in server now.
+				sp_sv_say_mute #~slot
+			}
+		}
+		
+		add ~count 1
+	}
+}
+
+
+//instead of using global cvars, use function names for each target
+//so that each target has its own function, then ip_list are hard-coded into the func.
+function target_cidrs_match_slots_ip_norway(~slot)
+{
+	perma_debug "DEBUG: target_cidrs_match_slots_ip_norway"
+
+ 	
+ 	zero :tmp_cidr_list
+
+ 	//list has to be global cvar
+
+ 	sp_sc_func_exec spf_sc_list_add ~cidr_list 0.0.0.0/24 ","
+  	sp_sc_func_exec spf_sc_list_add ~cidr_list 0.0.0.0/24 ","
+
+
+  	zero _sp_sv_info_client_ip
+  	sp_sv_info_client #~slot
+  	//function spf_sc_ip_match_cidr_list( ~par_ip, ~par_ip_cidr_list, ~ret_code )
+  	//this internally sets return to 0.
+  	sp_sc_func_exec spf_sc_ip_match_cidr_list #_sp_sv_info_client_ip #:tmp_cidr_list return
+}
+function target_cidrs_match_slots_ip_dende(~slot)
+{
+	perma_debug "DEBUG: target_cidrs_match_slots_ip_dende"
+
+ 	
+ 	zero :tmp_cidr_list
+
+ 	//list has to be global cvar
+  	sp_sc_func_exec spf_sc_list_add :tmp_cidr_list 0.0.0.0/24 ","
+
+  	zero _sp_sv_info_client_ip
+  	sp_sv_info_client #~slot
+  	//function spf_sc_ip_match_cidr_list( ~par_ip, ~par_ip_cidr_list, ~ret_code )
+  	//this internally sets return to 0.
+  	sp_sc_func_exec spf_sc_ip_match_cidr_list #_sp_sv_info_client_ip #:tmp_cidr_list return
+}
+function target_cidrs_match_slots_ip_acadie(~slot)
+{
+	perma_debug "DEBUG: target_cidrs_match_slots_ip_dende"
+
+ 	
+ 	zero :tmp_cidr_list
+
+ 	//list has to be global cvar
+  	sp_sc_func_exec spf_sc_list_add :tmp_cidr_list 0.0.0.0/24 ","
+
+  	zero _sp_sv_info_client_ip
+  	sp_sv_info_client #~slot
+  	//function spf_sc_ip_match_cidr_list( ~par_ip, ~par_ip_cidr_list, ~ret_code )
+  	//this internally sets return to 0.
+  	sp_sc_func_exec spf_sc_ip_match_cidr_list #_sp_sv_info_client_ip #:tmp_cidr_list return
+}
