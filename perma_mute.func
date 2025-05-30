@@ -63,6 +63,15 @@ function unmute_cb(~slot, ~unmute_store, ~target)
 	sp_sc_flow_if number cvar return == val 1
 	{
 		sp_sv_say_unmute $~slot
+		set ~i 0
+		sp_sc_flow_while number cvar ~i < val 16
+		{
+			sp_sc_flow_if number cvar ~i != cvar ~slot
+			{
+				sp_sc_func_exec .unmute $~i #~slot
+			}
+			add ~i 1
+		}
 	}
 	
 	set #~unmute_store "0"
@@ -71,6 +80,7 @@ function unmute_cb(~slot, ~unmute_store, ~target)
 function .perma( ~par_slot,  ~target, ~minutes )
 {
 	perma_debug "DEBUG: .perma"
+
 
 	sp_sc_flow_if text cvar ~target != val ""
 	{
@@ -106,6 +116,15 @@ function .perma( ~par_slot,  ~target, ~minutes )
 						perma_debug "muted target " $~target "on directly"
 						//target is in server now.
 						sp_sv_say_mute #~slot
+						set ~i 0
+						sp_sc_flow_while number cvar ~i < val 16
+						{
+							sp_sc_flow_if number cvar ~i != cvar ~slot
+							{
+								sp_sc_func_exec .mute $~i #~slot
+							}
+							add ~i 1
+						}
 						set #~is_muted_cvar "1" 
 
 						sp_sc_info_time
@@ -149,9 +168,10 @@ function .perma( ~par_slot,  ~target, ~minutes )
 	else
 	{
 		perma_debug ".perma TARGET DURATION"
-		sp_sv_print_broadcast ".perma TARGET DURATION"
-		sp_sv_print_broadcast "Valid Targets: norway, acadie, dende"
+		sp_sv_print_client #~par_slot ".perma TARGET DURATION"
+		sp_sv_print_client #~par_slot "Valid Targets: norway, acadie, dende"
 	}
+
 }
 
 //a player connects
@@ -179,6 +199,15 @@ function perma_mute_connected( ~slot )
 				perma_debug "muted target " $~target "on connect"
 				//target is in server now.
 				sp_sv_say_mute #~slot
+				set ~i 0
+				sp_sc_flow_while number cvar ~i < val 16
+				{
+					sp_sc_flow_if number cvar ~i != cvar ~slot
+					{
+						sp_sc_func_exec .mute $~i #~slot
+					}
+					add ~i 1
+				}
 			}
 		}
 		
